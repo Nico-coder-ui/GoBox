@@ -1,0 +1,104 @@
+Parfait, voici tout ce que GoBox V1 peut logguer sans sandbox système. Tu peux intégrer ces logs dans un fichier .json, un affichage CLI structuré ou un tableau HTML pour dashboard.
+Logs et métriques capturables dans GoBox V1
+Catégorie	Clé de log	Description
+Temps	start_time	Timestamp au lancement
+	end_time	Timestamp à la fin
+	execution_duration	Durée totale en millisecondes
+Entrée/Sortie	stdout	Sortie standard (capturée en temps réel ou à la fin)
+	stderr	Sortie d’erreur
+Processus	pid	PID du processus enfant
+	exit_code	Code de retour du processus
+	was_killed	Booléen indiquant si le processus a été tué (ex: timeout)
+Mémoire/CPU	peak_memory_mb	Pic de mémoire (obtenu via /proc/[pid]/status ou runtime Go)
+	cpu_user_time_ms	Temps CPU “user”
+	cpu_system_time_ms	Temps CPU “kernel”
+Fichiers	binary_size_bytes	Taille du fichier binaire ou script exécuté
+	temp_dir_size_bytes	Taille du répertoire temporaire post-exécution
+	log_file_size_bytes	Si tu écris un fichier .log, sa taille
+Erreurs système	execution_errors	Liste d’erreurs retournées par le système Go (exec: not found, etc.)
+Contexte système	cwd	Répertoire courant de lancement
+	hostname / uid / gid	Informations système
+	env_vars (optionnel)	Variables d’environnement si loggées
+Conseils de présentation
+
+    Format recommandé : JSON structuré, exemple :
+
+{
+  "start_time": "2025-04-12T14:22:10Z",
+  "execution_duration": 4215,
+  "stdout": "Build succeeded...",
+  "stderr": "",
+  "exit_code": 0,
+  "peak_memory_mb": 34.2,
+  "cpu_user_time_ms": 1550,
+  "binary_size_bytes": 53200,
+  "cwd": "/tmp/gobox_8132",
+  "hostname": "gobox-host",
+  "execution_errors": []
+}
+
+Tu veux que je t’aide à structurer ça dans un type Go (struct) pour générer un fichier de log automatique à la fin de chaque run ?
+Logs et métriques collectés par GoBox lors d’une exécution sécurisée
+
+Lors de l’exécution d’un script ou binaire via un outil GoBox (exécuteur sécurisé), de nombreux journaux et métriques peuvent être capturés. L’objectif est de disposer de toutes les informations non disponibles lors d’une exécution manuelle classique, pour la traçabilité, l’audit, la reproductibilité et le débogage. Voici une liste exhaustive et structurée de ces logs et métriques, organisée par catégorie, avec leur utilité et des méthodes de collecte possibles sous Linux.
+Sorties standard et statut de sortie
+
+Ce groupe de journaux correspond aux sorties textuelles de l’application et à la manière dont elle se termine.
+Log/Métrique	Description et utilité	Méthodes de collecte (Linux)
+Sortie standard (stdout)	Contenu textuel produit sur la sortie standard pendant l’exécution. Utile pour conserver le résultat normal de l’application (par exemple les messages et résultats imprimés).	Rediriger le flux stdout vers un fichier ou un pipe. Par exemple en Bash : ./programme > stdout.log. En Go, utiliser les pipes de exec.Command (ex. cmd.StdoutPipe) pour capturer la sortie standard.
+Sortie d’erreur (stderr)	Contenu des messages d’erreur émis pendant l’exécution. Indispensable pour le débogage (trace d’erreurs, exceptions, warnings).	Rediriger stderr vers un fichier séparé (ex. 2> stderr.log) ou le capturer via cmd.StderrPipe en Go. On peut fusionner stdout/stderr si nécessaire (2>&1) pour préserver l’ordre des messages.
+Statut de sortie (code retour)	Code de retour du processus une fois terminé, ou signal de terminaison. Permet de savoir si l’exécution a réussi (code 0) ou échoué (code ≠0, ou interruption par un signal tel que SIGSEGV).	Récupérer le code via les API d’attente de processus (ex. os.ProcessState.ExitCode() en Go). Si le processus est tué par un signal, détecter ce signal via syscall.Wait4 ou en examinant ProcessState (par ex. syscall.WaitStatus).
+Temps d’exécution et utilisation CPU
+
+Ces métriques concernent la performance temporelle et l’utilisation du processeur par le programme.
+Métrique	Description et utilité	Méthodes de collecte (Linux)
+Temps d’exécution total	Durée totale de l’exécution du programme (du début à la fin). Utile pour mesurer les performances et détecter d’éventuels blocages ou lenteurs.	Enregistrer l’horodatage de début et de fin, puis calculer la différence. Par exemple, utiliser time.Now() en Go au lancement et à la fin, ou la commande shell time.
+Utilisation CPU	Temps CPU consommé par le processus (temps en mode utilisateur et noyau), et éventuellement pourcentage moyen de CPU utilisé. Cela aide à identifier la charge CPU du programme.	Utiliser getrusage pour obtenir le temps CPU user/sys consommé​
+informit.com
+. La somme du temps CPU divisé par le temps réel donne le pourcentage moyen de CPU. On peut également lire /proc/<pid>/stat ou utiliser pidstat/top pour un suivi plus fin.
+Utilisation mémoire
+
+Métriques relatives à la mémoire vive utilisée par le programme au cours de son exécution.
+Métrique	Description et utilité	Méthodes de collecte (Linux)
+Mémoire utilisée (RSS)	Mémoire physique résidentielle utilisée par le processus. On mesure généralement la taille mémoire maximale atteinte (pic de RSS) pendant l’exécution, indicateur important pour le dimensionnement et la détection de fuites de mémoire.	Lire les statistiques du processus : par exemple le champ VmHWM (High Water Mark) dans /proc/<pid>/status, qui fournit la mémoire résidentielle maximale​
+nextflow.io
+. On peut aussi utiliser getrusage(RUSAGE_CHILDREN) qui donne ru_maxrss (pic RSS en Ko)​
+informit.com
+, ou la commande /usr/bin/time -v qui affiche la “Taille maximale de la mémoire résidente”.
+Stockage disque et E/S fichiers
+
+Informations concernant l’espace disque et les opérations d’entrées/sorties (I/O) du programme, y compris la création de fichiers temporaires.
+Log/Métrique	Description et utilité	Méthodes de collecte (Linux)
+Taille du binaire/dossier (avant/après)	Taille du fichier exécuté et/ou du répertoire temporaire avant et après l’exécution. Permet de détecter des modifications ou fichiers générés pendant l’exécution (par ex. fichiers temporaires créés, logs générés).	Mesurer la taille du fichier ou dossier via stat ou du. Par exemple, utiliser du -sh <dossier> avant et après. En Go, parcourir le dossier temporaire et sommer la taille des fichiers. Comparer la taille initiale vs finale pour repérer les changements.
+Entrées/Sorties disque (volume)	Volume de données lues et écrites sur le stockage disque pendant l’exécution. Indique l’intensité des opérations E/S (lecture/écriture de fichiers).	Consulter les compteurs dans /proc/<pid>/io : les champs read_bytes et write_bytes indiquent les octets réellement lus et écrits sur le disque​
+nextflow.io
+. On peut également intercepter les appels read()/write() via strace pour plus de détails, ou utiliser les cgroups (io.stat) pour obtenir les octets lus/écrits par le groupe de processus.
+Fichiers créés/modifiés	(Traçabilité) Liste des nouveaux fichiers ou fichiers modifiés par le programme durant son exécution, avec leur taille. Utile pour l’audit des artefacts produits (fichiers de sortie, logs).	Comparer l’état du système de fichiers avant/après l’exécution. Par exemple, lister le contenu du dossier temporaire et utiliser diff pour repérer les changements. Des outils comme inotify ou l’audit Linux (auditd) peuvent capter en temps réel les créations/écritures de fichiers.
+Utilisation réseau (si activée)
+
+Ces journaux concernent l’activité réseau du programme, si le sandbox l’autorise. En exécution manuelle, on n’a pas toujours le détail du trafic réseau.
+Log/Métrique	Description et utilité	Méthodes de collecte (Linux)
+Activité réseau (trafic)	Volume de données envoyées et reçues par le programme sur le réseau. Permet de savoir si le programme communique beaucoup (utile pour audit ou facturation, etc.).	Mesurer les octets envoyés/reçus via des compteurs réseau. Par exemple, utiliser un cgroup réseau dédié pour le processus et lire les statistiques (bytes) ou analyser /proc/<pid>/net/dev pour extraire les octets par interface. On peut aussi intercepter les appels send/recv via eBPF ou strace pour compter les octets.
+Connexions réseau établies	Détails des connexions réseau (adresses distantes, ports) contactées par le programme. Utile en audit de sécurité pour savoir où le programme s’est connecté.	Activer la journalisation des appels système réseau : par ex. utiliser l’auditd ou un profil seccomp pour surveiller les appels connect(). On peut aussi parser /proc/<pid>/net/udp et /proc/<pid>/net/tcp pour voir les sockets ouverts, ou utiliser ss -p afin disterminer les connexions du processus.
+Erreurs système et sécurité
+
+Logs relatifs aux erreurs systèmes rencontrées et aux violations de sécurité tentées par le programme (opérations interdites bloquées par GoBox).
+Log/Métrique	Description et utilité	Méthodes de collecte (Linux)
+Erreurs système	Erreurs rencontrées au niveau du système par le programme : échecs d’appels système (ex : ouverture de fichier échouée, erreur réseau), ou incidents comme segmentation fault/exceptions. Ces informations aident à comprendre les causes d’échec.	Capturer les codes d’erreur des appels système (par ex. via un strace du processus pour voir les errno). On peut également lire les messages d’erreur sur stderr (beaucoup d’erreurs y sont déjà loggées par le programme). En cas de crash par signal (ex: SIGSEGV), détecter le signal via le statut de sortie. Les messages du noyau (dmesg) peuvent aussi mentionner certaines erreurs graves (OOM Killer, violations mémoire, etc.).
+Logs de sécurité (violations bloquées)	Tentatives d’opérations interdites bloquées par le sandbox : par ex. accès à un fichier non autorisé, écriture ou suppression bloquée, appel réseau interdit, chargement de bibliothèque non autorisée, etc. Ces événements de sécurité sont essentiels pour l’audit (ils montrent ce qu’aurait fait le programme sans la sandbox).	Mettre en place des politiques de sécurité : ex. un filtre seccomp ou AppArmor qui bloque certaines appels/accès. Seccomp peut générer un log audit en cas de violation (avec action kill qui déclenche un log kernel​
+unix.stackexchange.com
+). Alternativement, instrumenter le code via des hooks/LD_PRELOAD pour intercepter les appels à haut risque et logger toute tentative interdite. Les logs du noyau (via auditd ou syslog) peuvent être collectés pour recenser ces violations.
+Contexte d’exécution (traçabilité et reproductibilité)
+
+Informations supplémentaires pour reproduire et auditer l’exécution dans son contexte exact.
+Log/Métrique	Description et utilité	Méthodes de collecte (Linux)
+Horodatage début/fin	Date et heure précises de début et de fin d’exécution. Fournit le contexte temporel (pour reconstituer la chronologie dans des logs globaux, ou pour tracer quelle exécution a eu lieu à quel moment).	Obtenus via les fonctions d’heure système (ex. date ou time.Time en Go). Enregistrer l’horodatage au lancement du processus et juste après sa terminaison.
+Commande exécutée	Ligne de commande complète exécutée (chemin du binaire/script et arguments). Assure la traçabilité exacte de ce qui a été lancé, et permet de rejouer la même commande pour reproduction.	Loggée par GoBox avant l’exécution. En Go, on peut capturer os.Args ou, si c’est un binaire distinct, journaliser exec.Command.String() qui reconstitue la commande. Inclure également le répertoire courant si pertinent.
+Utilisateur d’exécution	Identité sous laquelle le processus tourne (UID, GID, éventuellement chroot/namespace). Important pour l’audit (savoir quel utilisateur a lancé le processus et avec quels droits).	Récupérer l’UID/GID effectif du processus (par ex. via os.Getuid() / os.Getgid() avant lancement, ou stat sur /proc/<pid>). Si GoBox change d’utilisateur (sandbox « nobody »), le consigner.
+Variables d’environnement	Variables d’environnement présentes lors de l’exécution. Elles peuvent influencer le comportement du programme ; les consigner aide à reproduire l’environnement exact.	Capturer la liste des variables via /proc/<pid>/environ ou en enregistrant os.Environ() avant l’exécution. Par exemple, Nextflow trace les variables d’environnement utilisées​
+nextflow.io
+. Attention à ne pas exposer de secrets si on intègre ces infos dans un rapport public.
+Processus et threads	Informations sur les processus enfants engendrés et le nombre de threads utilisés. Utile pour voir si l’application a parallélisé son travail ou spawné des sous-processus (ce qui impacte les ressources).	Surveiller les appels fork()/execve(). Par exemple, compter les processus enfants via waitpid ou en lisant le statut /proc/<pid>/task pour les threads (champ Threads dans /proc/<pid>/status). GoBox peut imposer des limites de forks et les journaliser.
+Empreinte du binaire	Empreinte cryptographique (hash SHA-256, MD5…) du fichier exécuté. Assure l’intégrité et la traçabilité du binaire/script lancé (identifier exactement la version du fichier exécuté).	Calculer un hash du fichier avant exécution (avec sha256sum ou via une librairie de hash en Go sur le fichier cible). Enregistrer ce hash dans le rapport d’exécution.
+
+Chaque catégorie de log/métrique ci-dessus contribue à une meilleure observabilité de l’exécution dans GoBox. En combinant ces données dans un rapport structuré (par exemple sous forme de tableau ou de fichier JSON), on facilite l’analyse a posteriori, la reproductibilité des conditions d’exécution et le débogage approfondi en cas de problème. Toutes ces informations, collectées automatiquement, dépassent ce qu’un utilisateur obtiendrait d’une simple exécution manuelle, améliorant la traçabilité et la sécurité des exécutions.​
