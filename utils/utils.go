@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -22,7 +23,7 @@ func (r *ExecutionResult) PrintPretty() {
 	fmt.Println("🧩 Arguments      :", r.Args)
 	fmt.Println("🕓 Début          :", r.StartedAt.Format("2006-01-02 15:04:05"))
 	fmt.Println("🕔 Fin            :", r.FinishedAt.Format("2006-01-02 15:04:05"))
-	fmt.Println("⏱️ Temps total    :", r.ExecutionTime)
+	fmt.Println("⏱️  Temps total    :", r.ExecutionTime)
 
 	if r.Success {
 		fmt.Println("✅ Succès         : Oui")
@@ -33,6 +34,22 @@ func (r *ExecutionResult) PrintPretty() {
 
 	fmt.Println("💬 Sortie :")
 	fmt.Println("-------------------")
-	fmt.Println(r.Output)
+	fmt.Print(r.Output)
 	fmt.Println("-------------------")
+}
+
+func IsLocally(scriptPath string) bool {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		fmt.Println("Failed to load your repertory :", err)
+		return false
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && entry.Name() == scriptPath {
+			return true
+		}
+	}
+
+	return false
 }
