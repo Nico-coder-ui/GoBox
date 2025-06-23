@@ -19,8 +19,8 @@ go build -o gobox
 
 **Exemples**<br>
 ```
-./gobox hello.sh --args="John Doe"
-./gobox server.py --args="8080"
+./gobox test.sh
+./gobox test.sh --args="val1"
 ```
 
 ## Fonctionnalités
