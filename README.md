@@ -7,15 +7,21 @@ Il permet différentes statistiques et retour du programme demandé sans pour au
 
 ## Compilation
 
-``go build -o gobox``<br>
+```
+go build -o gobox
+```
 
 ## Utilisation
 
-``./gobox [script] --args="[arguments]"``<br>
-<br>
+```
+./gobox [script] --args="[arguments]"
+```
+
 **Exemples**<br>
-``./gobox hello.sh --args="John Doe"``<br>
-``./gobox server.py --args="8080"``<br>
+```
+./gobox hello.sh --args="John Doe"
+./gobox server.py --args="8080"
+```
 
 ## Fonctionnalités
 - Isolation via Docker  
